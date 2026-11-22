@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: transition
+      POSTGRES_PASSWORD: transition-demo
+      POSTGRES_DB: transition
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U transition"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    volumes:
+      - database:/var/lib/postgresql/data
+  api:
+    build: ./backend
+    environment:
+      TRANSITION_DATABASE_URL: postgresql+psycopg://transition:transition-demo@db/transition
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["sh", "-c", "python app.py init && uvicorn app:app --host 0.0.0.0"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    ports:
+      - "127.0.0.1:8000:8000"
+  worker:
+    build: ./backend
+    environment:
+      TRANSITION_DATABASE_URL: postgresql+psycopg://transition:transition-demo@db/transition
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["python", "app.py", "worker"]
+  web:
+    build: ./frontend
+    environment:
+      TRANSITION_API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:5173:4173"
+volumes:
+  database:
